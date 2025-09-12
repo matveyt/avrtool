@@ -83,7 +83,9 @@ void parse_args(int argc, char* argv[])
         break;
         case 9:
             opt.at89s = true;
+#if defined(__GNUC__)
             __attribute__((fallthrough));
+#endif // __GNUC__
             // require also opt.noreset
         case 'n':
             opt.noreset = true;
@@ -163,9 +165,12 @@ int main(int argc, char* argv[])
     // UART connection
     uint8_t buffer[4];
     intptr_t isp = ucomm_open(opt.port, opt.baud, 0x801/*8-N-1*/);
-    free(opt.port);
-    if (isp < 0)
+    if (isp < 0) {
+        if (opt.port == NULL)
+            help();
         z_die("ucomm_open");
+    }
+    free(opt.port);
 
     if (!opt.noreset) {
         // assert RTS then DTR (aka. nodemcu reset)
