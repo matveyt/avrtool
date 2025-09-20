@@ -11,9 +11,10 @@ enum {
     STK_NOSYNC,
 };
 
-int isp_command(int ch, void* buffer, size_t length, intptr_t fd);
-int isp_set_device(int devcode, size_t psz, size_t esz, size_t fsz, intptr_t fd);
+int isp_command(int ch, intptr_t fd);
+int isp_set_device(int devcode, size_t fsz, size_t psz, intptr_t fd);
+int isp_read_sign(uint32_t* sig, intptr_t fd);
 int isp_load_address(uint32_t address, intptr_t fd);
 int isp_read_page(void* buffer, size_t length, intptr_t fd);
 int isp_prog_page(const void* buffer, size_t length, intptr_t fd);
-int isp_universal(int b1, int b2, int b3, int b4, void* b4_out, intptr_t fd);
+int isp_universal(int b1, int b2, int b3, int b4, void* b_out, intptr_t fd);

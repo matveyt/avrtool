@@ -46,21 +46,14 @@ char* z_strdup(const char* str)
 
 char* z_strerror_r(int errnum, char* buf, size_t n)
 {
-#if defined(_WIN32)
-    DWORD dwErrorCode;
-#endif
-    if (n == 0)
-        return buf;
-
     if (errnum != 0)
         strncpy(buf, strerror(errnum), n - 1);
-    else
 #if defined(_WIN32)
-    if ((dwErrorCode = GetLastError()) != ERROR_SUCCESS)
+    else if (GetLastError() != ERROR_SUCCESS)
         FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-            dwErrorCode, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), buf, n, NULL);
-    else
+            GetLastError(), MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT), buf, n, NULL);
 #endif
+    else
         strncpy(buf, "Unspecified error", n - 1);
 
     buf[n - 1] = '\0';

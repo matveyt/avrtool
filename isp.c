@@ -14,19 +14,33 @@ static int exec(void* buffer, size_t length, intptr_t fd)
 }
 
 // AVRISP/STK500 generic command w/o parameters
-int isp_command(int ch, void* buffer, size_t length, intptr_t fd)
+int isp_command(int ch, intptr_t fd)
 {
     ucomm_putc(fd, ch);
-    return exec(buffer, length, fd);
+    return exec(NULL, 0, fd);
 }
 
 // STK_SET_DEVICE
-int isp_set_device(int devcode, size_t psz, size_t esz, size_t fsz, intptr_t fd)
+int isp_set_device(int devcode, size_t fsz, size_t psz, intptr_t fd)
 {
-    uint8_t cmd[] = { 'B', devcode, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        psz >> 8, psz, esz >> 8, esz, fsz >> 24, fsz >> 16, fsz >> 8, fsz };
+    uint8_t cmd[] = { 'B', devcode, 0, 0, 1, 1, 1, 1, 3, 0xff, 0xff, 0xff, 0xff,
+        psz >> 8, psz, fsz >> 12, fsz >> 4, fsz >> 24, fsz >> 16, fsz >> 8, fsz };
     ucomm_write(fd, cmd, sizeof(cmd));
     return exec(NULL, 0, fd);
+}
+
+// STK_READ_SIGN
+int isp_read_sign(uint32_t* sig, intptr_t fd)
+{
+    uint8_t b_out[3];
+    ucomm_putc(fd, 'u');
+    int resp = exec(b_out, sizeof(b_out), fd);
+    if (resp == STK_OK) {
+        *sig = (b_out[0] << 16) | (b_out[1] << 8) | b_out[2];
+        if (*sig == 0 || *sig == 0x00ffffff)
+            resp = STK_FAILED;
+    }
+    return resp;
 }
 
 // STK_LOAD_ADDRESS
@@ -55,9 +69,9 @@ int isp_prog_page(const void* buffer, size_t length, intptr_t fd)
 }
 
 // STK_UNIVERSAL
-int isp_universal(int b1, int b2, int b3, int b4, void* b4_out, intptr_t fd)
+int isp_universal(int b1, int b2, int b3, int b4, void* b_out, intptr_t fd)
 {
     uint8_t cmd[] = { 'V', b1, b2, b3, b4 };
     ucomm_write(fd, cmd, sizeof(cmd));
-    return exec(b4_out, 1, fd);
+    return exec(b_out, 1, fd);
 }

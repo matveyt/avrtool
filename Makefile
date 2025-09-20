@@ -3,9 +3,9 @@ LDFLAGS := -s
 
 .PHONY : clean
 
-avrtool : ihex.o isp.o stdz.o ucomm.o
-avrtool.o : ihex.h isp.h stdz.h ucomm.h
-ihex.o : ihex.h stdz.h
+avrtool : ihx.o isp.o stdz.o ucomm.o
+avrtool.o : ihx.h isp.h stdz.h ucomm.h
+ihx.o : ihx.h stdz.h
 isp.o : isp.h
 stdz.o : stdz.h
 ucomm.o : ucomm.h
