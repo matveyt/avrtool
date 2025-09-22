@@ -10,8 +10,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#define UCOMM_DEFAULT_TIMEOUT 300
+
 // open port
-// note: blocking I/O only (300 ms default timeout)
+// note: blocking I/O only
 intptr_t ucomm_open(const char* port, unsigned baud, unsigned config);
 // // 115200 bps 8-N-1
 // intptr_t fd = ucomm_open("/dev/ttyUSB0", 115200, 0x801);
@@ -41,11 +43,14 @@ int ucomm_putc(intptr_t fd, int ch);
 ssize_t ucomm_read(intptr_t fd, void* buffer, size_t length);
 ssize_t ucomm_write(intptr_t fd, const void* buffer, size_t length);
 
-// get ports list (ucomm_ports.c)
-char** ucomm_ports(void);
-// char** ports = ucomm_ports();
-// if (ports != NULL) {
-//     for (size_t i = 0; ports[i] != NULL; ++i)
+// get ports list (in ucomm_ports.c)
+size_t ucomm_ports(char*** ports);
+// char** ports;
+// size_t n = ucomm_ports(&ports);
+// if (n > 0) {
+//     for (size_t i = 0; i < n; ++i)
 //         puts(ports[i]);
+//     assert(ports[n] == NULL);
 //     free(ports);
-// }
+// } else
+//     assert(ports == NULL);

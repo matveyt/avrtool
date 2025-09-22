@@ -77,14 +77,14 @@ intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
             .fDtrControl = DTR_CONTROL_DISABLE,
             .fRtsControl = RTS_CONTROL_DISABLE,
             .ByteSize = databits,
-            .Parity = (parity == 0) ? NOPARITY : (parity == 1) ? ODDPARITY : EVENPARITY,
+            .Parity = !parity ? NOPARITY : (parity == 1) ? ODDPARITY : EVENPARITY,
             .StopBits = (stopbits == 1) ? ONESTOPBIT : TWOSTOPBITS,
             .XonLim = 256,
             .XoffLim = 256,
         };
         SetupComm(fd, 1024, 1024);
         SetCommState(fd, &dcb);
-        ucomm_timeout((intptr_t)fd, 300);
+        ucomm_timeout((intptr_t)fd, UCOMM_DEFAULT_TIMEOUT);
     }
 #elif defined(__unix__)
     // arbitrary value
@@ -115,7 +115,7 @@ intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
         tio.c_cflag |= (stopbits == 2) ? CSTOPB : 0;
         tio.c_cflag |= (CREAD | CLOCAL);
         tio.c_cc[VMIN] = 0;
-        tio.c_cc[VTIME] = 3;    // 300 ms
+        tio.c_cc[VTIME] = UCOMM_DEFAULT_TIMEOUT / 100;
         speed_t ubr = baudrate(baud);
         cfsetispeed(&tio, ubr);
         cfsetospeed(&tio, ubr);
@@ -142,7 +142,7 @@ int ucomm_timeout(intptr_t fd, unsigned ms)
         .ReadIntervalTimeout = ms ? ms : MAXDWORD,
         .ReadTotalTimeoutConstant = ms,
         .ReadTotalTimeoutMultiplier = 0,
-        .WriteTotalTimeoutConstant = ms,
+        .WriteTotalTimeoutConstant = 0,
         .WriteTotalTimeoutMultiplier = 0,
     };
     return SetCommTimeouts((HANDLE)fd, &timeouts) ? 0 : -1;
@@ -223,13 +223,12 @@ ssize_t ucomm_read(intptr_t fd, void* buffer, size_t length)
     while (sz < (ssize_t)length) {
 #if defined(_WIN32)
         DWORD part;
-        BOOL success = ReadFile((HANDLE)fd, (uint8_t*)buffer + sz, length - sz, &part,
-            NULL);
+        BOOL ok = ReadFile((HANDLE)fd, (uint8_t*)buffer + sz, length - sz, &part, NULL);
 #elif defined(__unix__)
         ssize_t part = read(fd, (uint8_t*)buffer + sz, length - sz);
-        int success = (part >= 0);
+        int ok = (part >= 0);
 #endif
-        if (!success && sz <= 0)
+        if (!ok && sz <= 0)
             return -1;
         if (part <= 0)
             break;
@@ -244,13 +243,12 @@ ssize_t ucomm_write(intptr_t fd, const void* buffer, size_t length)
     while (sz < (ssize_t)length) {
 #if defined(_WIN32)
         DWORD part;
-        BOOL success = WriteFile((HANDLE)fd, (uint8_t*)buffer + sz, length - sz, &part,
-            NULL);
+        BOOL ok = WriteFile((HANDLE)fd, (uint8_t*)buffer + sz, length - sz, &part, NULL);
 #elif defined(__unix__)
         ssize_t part = write(fd, (uint8_t*)buffer + sz, length - sz);
-        int success = (part >= 0);
+        int ok = (part >= 0);
 #endif
-        if (!success && sz <= 0)
+        if (!ok && sz <= 0)
             return -1;
         if (part <= 0)
             break;

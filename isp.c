@@ -1,7 +1,7 @@
 #include "isp.h"
 #include "ucomm.h"
 
-// AVRISP/STK500 execute command and read response
+// STK500 execute command and read response
 static int exec(void* buffer, size_t length, intptr_t fd)
 {
     ucomm_putc(fd, ' ');
@@ -13,7 +13,7 @@ static int exec(void* buffer, size_t length, intptr_t fd)
     return ucomm_getc(fd);
 }
 
-// AVRISP/STK500 generic command w/o parameters
+// STK500 generic command w/o parameters
 int isp_command(int ch, intptr_t fd)
 {
     ucomm_putc(fd, ch);

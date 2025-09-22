@@ -31,7 +31,7 @@ static struct {
 /*noreturn*/
 static void help(void)
 {
-    fprintf(stdout,
+    printf(
 "Usage: %s [OPTION]... [FILE]\n"
 "STK500v1 serial programmer. Write HEX/BIN file to AVR/Arduino.\n"
 "\n"
@@ -163,12 +163,12 @@ static uint8_t isp_v(const char* what, int b1, int b2, int b3, int b4, intptr_t 
 }
 
 // AVRISP: guess device parameters
-struct device {
+struct isp_device {
     uint32_t sig;       // Signature bytes
     bool cmdV;          // STK_UNIVERSAL supported
     size_t fsz, psz;    // Flash Size and Page Size
 };
-static void isp_guess(struct device* d, intptr_t fd)
+static uint32_t isp_guess(struct isp_device* d, intptr_t fd)
 {
     d->sig = 0;
     isp_set_device(0x86, 32768, 128, fd);       // fake ATmega328P
@@ -195,16 +195,16 @@ static void isp_guess(struct device* d, intptr_t fd)
     // don't leave from bootloader's progmode (or it'd go reboot)
     if (opt.noreset)
         isp_0("LEAVE_PROGMODE", 'Q', fd);
-
-    if (d->sig != 0) {
-        d->fsz = atmel_flashsize(d->sig);
-        d->psz = atmel_pagesize(d->sig, d->fsz);
-    }
+    if ((d->sig >> 16) != 0x1e)
+        return 0;
+    d->fsz = atmel_flashsize(d->sig);
+    d->psz = atmel_pagesize(d->sig, d->fsz);
+    return d->sig;
 }
 
 int main(int argc, char* argv[])
 {
-    opt.base = SIZE_MAX;    // invalid value
+    opt.base = SIZE_MAX;    // not used
     parse_args(argc, argv);
 
     // ISP connection
@@ -217,7 +217,7 @@ int main(int argc, char* argv[])
     free(opt.port);
 
     if (!opt.noreset) {
-        // assert RTS then DTR (aka. nodemcu reset)
+        // assert RTS then DTR (aka nodemcu reset)
         ucomm_rts(isp, 1);
         ucomm_dtr(isp, 1);
         ucomm_rts(isp, 0);
@@ -232,9 +232,8 @@ int main(int argc, char* argv[])
     ucomm_purge(isp);
 
     // test if anything is attached
-    struct device d;
-    isp_guess(&d, isp);
-    if (d.sig == 0) {
+    struct isp_device d;
+    if (isp_guess(&d, isp) == 0) {
         errno = ENODEV;
         z_die("isp_guess");
     }
