@@ -1,6 +1,6 @@
 //
 // uComm
-// A very minimal cross-platform serial port library
+// Minimalist cross-platform serial port library
 //
 // https://github.com/matveyt/ucomm
 //
@@ -16,9 +16,50 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #if !defined(O_CLOEXEC)
-#define O_CLOEXEC   0
-#endif // O_CLOEXEC
+#define O_CLOEXEC 0
 #endif
+#endif
+
+intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
+{
+    intptr_t fd;
+
+#if defined(_WIN32)
+    char fullname[sizeof("\\\\.\\COMnnn")];
+    if (port == NULL) {
+        port = "\\\\.\\COM3";
+    } else if (lstrlenA(port) <= (int)sizeof("COMnnn") - 1) {
+        // "COMnnn" to "\\\\.\\COMnnn"
+        lstrcpyA(fullname, "\\\\.\\");
+        port = lstrcatA(fullname, port);
+    }
+
+    HANDLE h = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+        0, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetupComm(h, 1024, 1024);
+        fd = (intptr_t)h;
+    } else
+        fd = -1;
+#elif defined(__unix__)
+    fd = open(port ? port : "/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_CLOEXEC);
+#endif
+
+    if (fd != -1) {
+        ucomm_reset(fd, baud, config);
+        ucomm_timeout(fd, UCOMM_DEFAULT_TIMEOUT);
+    }
+    return fd;
+}
+
+int ucomm_close(intptr_t fd)
+{
+#if defined(_WIN32)
+    return CloseHandle((HANDLE)fd) ? 0 : -1;
+#elif defined(__unix__)
+    return close(fd);
+#endif
+}
 
 static unsigned baudrate(unsigned baud)
 {
@@ -41,7 +82,7 @@ static unsigned baudrate(unsigned baud)
 #endif
 }
 
-intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
+int ucomm_reset(intptr_t fd, unsigned baud, unsigned config)
 {
     // config 0x801 => 8-N-1
     unsigned databits = (config >> 8) & 0x0f;   // 5..8
@@ -56,101 +97,48 @@ intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
         stopbits = 1;
 
 #if defined(_WIN32)
-    char fullname[11];  // \\\\.\\COMxxx
-    if (port == NULL) {
-        // arbitrary value
-        port = "\\\\.\\COM3";
-    } else if (lstrlenA(port) <= 6) {
-        // COMx => \\\\.\\COMx
-        lstrcpyA(fullname, "\\\\.\\");
-        port = lstrcatA(fullname, port);
-    }
-
-    HANDLE fd = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
-        0, NULL);
-    if (fd != INVALID_HANDLE_VALUE) {
-        DCB dcb = {
-            .DCBlength = sizeof(DCB),
-            .BaudRate = baudrate(baud),
-            .fBinary = 1,
-            .fParity = !!parity,
-            .fDtrControl = DTR_CONTROL_DISABLE,
-            .fRtsControl = RTS_CONTROL_DISABLE,
-            .ByteSize = databits,
-            .Parity = !parity ? NOPARITY : (parity == 1) ? ODDPARITY : EVENPARITY,
-            .StopBits = (stopbits == 1) ? ONESTOPBIT : TWOSTOPBITS,
-            .XonLim = 256,
-            .XoffLim = 256,
-        };
-        SetupComm(fd, 1024, 1024);
-        SetCommState(fd, &dcb);
-        ucomm_timeout((intptr_t)fd, UCOMM_DEFAULT_TIMEOUT);
-    }
-#elif defined(__unix__)
-    // arbitrary value
-    if (port == NULL)
-        port = "/dev/ttyUSB0";
-
-    int fd = open(port, O_RDWR | O_NOCTTY | O_CLOEXEC);
-    if (fd != -1) {
-        struct termios tio;
-        tcgetattr(fd, &tio);
-
-        //cfmakeraw(&tio);
-        tio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | ISTRIP | INLCR | IGNCR |
-            ICRNL | IXON | PARMRK);
-        tio.c_oflag &= ~(OPOST);
-        tio.c_cflag &= ~(CSIZE | CSTOPB | PARENB | PARODD);
-        tio.c_lflag &= ~(ISIG | ICANON | ECHO | ECHONL | IEXTEN);
-        switch (databits) {
-        case 5: tio.c_cflag |= CS5; break;
-        case 6: tio.c_cflag |= CS6; break;
-        case 7: tio.c_cflag |= CS7; break;
-        case 8: tio.c_cflag |= CS8; break;
-        }
-        if (parity != 0) {
-            tio.c_iflag |= INPCK;
-            tio.c_cflag |= (parity == 1) ? (PARENB | PARODD) : PARENB;
-        }
-        tio.c_cflag |= (stopbits == 2) ? CSTOPB : 0;
-        tio.c_cflag |= (CREAD | CLOCAL);
-        tio.c_cc[VMIN] = 0;
-        tio.c_cc[VTIME] = UCOMM_DEFAULT_TIMEOUT / 100;
-        speed_t ubr = baudrate(baud);
-        cfsetispeed(&tio, ubr);
-        cfsetospeed(&tio, ubr);
-        tcsetattr(fd, TCSANOW, &tio);
-    }
-#endif
-
-    return (intptr_t)fd;
-}
-
-int ucomm_close(intptr_t fd)
-{
-#if defined(_WIN32)
-    return CloseHandle((HANDLE)fd) ? 0 : -1;
-#elif defined(__unix__)
-    return close(fd);
-#endif
-}
-
-int ucomm_timeout(intptr_t fd, unsigned ms)
-{
-#if defined(_WIN32)
-    COMMTIMEOUTS timeouts = {
-        .ReadIntervalTimeout = ms ? ms : MAXDWORD,
-        .ReadTotalTimeoutConstant = ms,
-        .ReadTotalTimeoutMultiplier = 0,
-        .WriteTotalTimeoutConstant = 0,
-        .WriteTotalTimeoutMultiplier = 0,
+    DCB dcb = {
+        .DCBlength = sizeof(DCB),
+        .BaudRate = baudrate(baud),
+        .fBinary = 1,
+        .fParity = !!parity,
+        .fDtrControl = DTR_CONTROL_DISABLE,
+        .fRtsControl = RTS_CONTROL_DISABLE,
+        .XonLim = 256,
+        .XoffLim = 256,
+        .ByteSize = (BYTE)databits,
+        .Parity = (BYTE)(!parity ? NOPARITY : (parity == 1) ? ODDPARITY :
+            EVENPARITY),
+        .StopBits = (BYTE)((stopbits == 1) ? ONESTOPBIT : TWOSTOPBITS),
     };
-    return SetCommTimeouts((HANDLE)fd, &timeouts) ? 0 : -1;
+    ucomm_purge(fd);
+    return SetCommState((HANDLE)fd, &dcb) ? 0 : -1;
 #elif defined(__unix__)
     struct termios tio;
     tcgetattr(fd, &tio);
-    tio.c_cc[VTIME] = (ms / 100) + !!(ms % 100);
-    return tcsetattr(fd, TCSANOW, &tio);
+
+    //cfmakeraw(&tio);
+    tio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | ISTRIP | INLCR | IGNCR |
+        ICRNL | IXON | PARMRK);
+    tio.c_oflag &= ~(OPOST);
+    tio.c_cflag &= ~(CSIZE | CSTOPB | PARENB | PARODD);
+    tio.c_lflag &= ~(ISIG | ICANON | ECHO | ECHONL | IEXTEN);
+    switch (databits) {
+    case 5: tio.c_cflag |= CS5; break;
+    case 6: tio.c_cflag |= CS6; break;
+    case 7: tio.c_cflag |= CS7; break;
+    case 8: tio.c_cflag |= CS8; break;
+    }
+    if (parity != 0) {
+        tio.c_iflag |= INPCK;
+        tio.c_cflag |= (parity == 1) ? (PARENB | PARODD) : PARENB;
+    }
+    tio.c_cflag |= (stopbits == 2) ? CSTOPB : 0;
+    tio.c_cflag |= (CREAD | CLOCAL);
+    speed_t ubr = baudrate(baud);
+    cfsetispeed(&tio, ubr);
+    cfsetospeed(&tio, ubr);
+    return tcsetattr(fd, TCSAFLUSH, &tio);
 #endif
 }
 
@@ -163,12 +151,33 @@ int ucomm_purge(intptr_t fd)
 #endif
 }
 
+int ucomm_timeout(intptr_t fd, unsigned ms)
+{
+#if defined(_WIN32)
+    COMMTIMEOUTS timeouts = {
+        .ReadIntervalTimeout = ms ? ms : MAXDWORD,
+        .ReadTotalTimeoutMultiplier = 0,
+        .ReadTotalTimeoutConstant = ms,
+        .WriteTotalTimeoutMultiplier = 0,
+        .WriteTotalTimeoutConstant = 0,
+    };
+    return SetCommTimeouts((HANDLE)fd, &timeouts) ? 0 : -1;
+#elif defined(__unix__)
+    struct termios tio;
+    tcgetattr(fd, &tio);
+    tio.c_cc[VMIN] = 0;
+    tio.c_cc[VTIME] = (ms / 100) + !!(ms % 100);
+    return tcsetattr(fd, TCSANOW, &tio);
+#endif
+}
+
 int ucomm_dtr(intptr_t fd, int pulldown)
 {
 #if defined(_WIN32)
     return EscapeCommFunction((HANDLE)fd, pulldown ? SETDTR : CLRDTR) ? 0 : - 1;
 #elif defined(__unix__)
-    return ioctl(fd, pulldown ? TIOCMBIS : TIOCMBIC, &(int){TIOCM_DTR});
+    int arg = TIOCM_DTR;
+    return ioctl(fd, pulldown ? TIOCMBIS : TIOCMBIC, &arg);
 #endif
 }
 
@@ -177,7 +186,8 @@ int ucomm_rts(intptr_t fd, int pulldown)
 #if defined(_WIN32)
     return EscapeCommFunction((HANDLE)fd, pulldown ? SETRTS : CLRRTS) ? 0 : -1;
 #elif defined(__unix__)
-    return ioctl(fd, pulldown ? TIOCMBIS : TIOCMBIC, &(int){TIOCM_RTS});
+    int arg = TIOCM_RTS;
+    return ioctl(fd, pulldown ? TIOCMBIS : TIOCMBIC, &arg);
 #endif
 }
 

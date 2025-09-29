@@ -1,19 +1,24 @@
 //
 // uComm
-// A very minimal cross-platform serial port library
+// Minimalist cross-platform serial port library
 //
 // https://github.com/matveyt/ucomm
 //
 
-#pragma once
+#if !defined(UCOMM_H)
+#define UCOMM_H
+
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define UCOMM_DEFAULT_TIMEOUT 300
 
-// open port
-// note: blocking I/O only
+// open port (blocking write only)
 intptr_t ucomm_open(const char* port, unsigned baud, unsigned config);
 // // 115200 bps 8-N-1
 // intptr_t fd = ucomm_open("/dev/ttyUSB0", 115200, 0x801);
@@ -21,12 +26,15 @@ intptr_t ucomm_open(const char* port, unsigned baud, unsigned config);
 // close port
 int ucomm_close(intptr_t fd);
 
-// set timeout (0 for immediate return)
-// note: on __unix__ timeout is rounded up to 100 ms
-int ucomm_timeout(intptr_t fd, unsigned ms);
+// reset port configuration (also, discard I/O buffers)
+int ucomm_reset(intptr_t fd, unsigned baud, unsigned config);
 
 // discard I/O buffers
 int ucomm_purge(intptr_t fd);
+
+// set timeout (0 for immediate return)
+// note: on __unix__ timeout is rounded up to 100 ms
+int ucomm_timeout(intptr_t fd, unsigned ms);
 
 // set DTR and RTS (Cf. "set" means pulldown)
 int ucomm_dtr(intptr_t fd, int pulldown);
@@ -54,3 +62,9 @@ size_t ucomm_ports(char*** ports);
 //     free(ports);
 // } else
 //     assert(ports == NULL);
+
+#if defined(__cplusplus)
+}
+#endif
+
+#endif // UCOMM_H

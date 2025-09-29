@@ -1,7 +1,13 @@
-#pragma once
+#if !defined(IHX_H)
+#define IHX_H
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 // load Intel HEX or Binary file
 // note: may fseek(f), caller must free(image)
@@ -33,3 +39,9 @@ size_t ihx_blob(uint8_t* blob, size_t sz, const char* str);
 // uint8_t blob[4];
 // size_t bloblen = ihx_blob(blob, sizeof(blob), "deadbeef");
 // assert(bloblen == 4);
+
+#if defined(__cplusplus)
+}
+#endif
+
+#endif // IHX_H

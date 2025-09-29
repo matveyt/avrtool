@@ -1,4 +1,6 @@
-#pragma once
+#if !defined(ISP_H)
+#define ISP_H
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,3 +20,5 @@ int isp_load_address(uint32_t address, intptr_t fd);
 int isp_read_page(void* buffer, size_t length, intptr_t fd);
 int isp_prog_page(const void* buffer, size_t length, intptr_t fd);
 int isp_universal(int b1, int b2, int b3, int b4, void* b_out, intptr_t fd);
+
+#endif // ISP_H

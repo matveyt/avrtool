@@ -2,7 +2,7 @@
 #include "stdz.h"
 
 #define MIN_BYTES   5
-#define MAX_BYTES   (MIN_BYTES + UINT8_MAX)
+#define MAX_BYTES   (MIN_BYTES + 255)
 #define MIN_LINE    (1 + 2 * MIN_BYTES)
 #define MAX_LINE    (1 + 2 * MAX_BYTES)
 
@@ -11,7 +11,7 @@ typedef struct {
     unsigned count;
     size_t address;
     int type;
-    uint8_t data[UINT8_MAX];
+    uint8_t data[255];
 } CHUNK;
 
 static unsigned sum8(unsigned word)
@@ -84,7 +84,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
     size_t segment = 0, blocksize = 0x10000;    // 64 KB
     size_t start = SIZE_MAX, end = 0, eip = 0;
 
-    *image = memset(z_malloc(blocksize), 0xff, blocksize);
+    *image = (uint8_t*)memset(z_malloc(blocksize), 0xff, blocksize);
     *sz = *base = *entry = 0;
 
     bool found_eof = false;
@@ -114,7 +114,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
                 // grow image if less than 64 KB remaining
                 if (segment + 0x10000 > blocksize) {
                     size_t newsize = segment + 0x100000; // +1 MB
-                    *image = z_realloc(*image, newsize);
+                    *image = (uint8_t*)z_realloc(*image, newsize);
                     memset(*image + blocksize, 0xff, newsize - blocksize);
                     blocksize = newsize;
                 }
@@ -135,7 +135,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
                 long t = ftell(f);
                 if (t > 0) {
                     fseek(f, 0, SEEK_SET);
-                    *image = z_realloc(*image, t);
+                    *image = (uint8_t*)z_realloc(*image, t);
                     *sz = fread(*image, 1, t, f);
                     return 'b';
                 }
@@ -160,7 +160,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
     }
 
     // shrink memory block
-    *image = z_realloc(*image, *sz);
+    *image = (uint8_t*)z_realloc(*image, *sz);
     return 'x';
 }
 
@@ -200,7 +200,7 @@ void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned fil
 
         // skip trailing bytes
         unsigned cb_line = cb_max;
-        if (filler <= UINT8_MAX)
+        if (filler <= 255)
             for (; cb_line > 0; --cb_line)
                 if (image[i + cb_line - 1] != filler)
                     break;
