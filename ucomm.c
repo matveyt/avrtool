@@ -17,7 +17,10 @@
 #include <sys/ioctl.h>
 #if !defined(O_CLOEXEC)
 #define O_CLOEXEC 0
-#endif
+#endif // O_CLOEXEC
+#if !defined(TIOCINQ)
+#define TIOCINQ FIONREAD
+#endif // TIOCINQ
 #endif
 
 intptr_t ucomm_open(const char* port, unsigned baud, unsigned config)
@@ -67,12 +70,12 @@ static unsigned baudrate(unsigned baud)
     return baud ? baud : 115200;
 #elif defined(__unix__)
     static const unsigned ubr[] = {
-#define B(n)    (B##n), (n)
-        B(50), B(75), B(110), B(134), B(150), B(200), B(300), B(600), B(1200), B(1800),
-        B(2400), B(4800), B(9600), B(19200), B(38400), B(57600), B(115200),
-        /*B(128000),*/ B(230400), /*B(256000),*/ B(460800), B(500000), B(576000),
-        B(921600), B(1000000), B(1152000), B(1500000), B(2000000), B(2500000),
-        B(3000000), /*B(3500000),*/ /*B(4000000),*/
+#define B(n)    (B##n), (n),
+        B(50) B(75) B(110) B(134) B(150) B(200) B(300) B(600) B(1200) B(1800) B(2400)
+        B(4800) B(9600) B(19200) B(38400) B(57600) B(115200) /*B(128000)*/ B(230400)
+        /*B(256000)*/ B(460800) /*B(500000)*/ /*B(576000)*/ B(921600) /*B(1000000)*/
+        /*B(1152000)*/ /*B(1500000)*/ /*B(2000000)*/ /*B(2500000)*/ /*B(3000000)*/
+        /*B(3500000)*/ /*B(4000000)*/
 #undef B
     };
     for (ssize_t i = sizeof(ubr) / sizeof(ubr[0]) - 1; i > 0; i -= 2)
@@ -197,9 +200,8 @@ ssize_t ucomm_available(intptr_t fd)
     COMSTAT stat;
     return ClearCommError((HANDLE)fd, NULL, &stat) ? (LONG)stat.cbInQue : -1;
 #elif defined(__unix__)
-    int available = -1;
-    ioctl(fd, TIOCINQ, &available);
-    return available;
+    int available;
+    return ioctl(fd, TIOCINQ, &available) < 0 ? -1 : available;
 #endif
 }
 

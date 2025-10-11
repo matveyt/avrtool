@@ -33,13 +33,6 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f);
 void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned filler,
     unsigned wrap, FILE* f);
 
-// convert hex string to byte array
-// return number of bytes converted
-size_t ihx_blob(uint8_t* blob, size_t sz, const char* str);
-// uint8_t blob[4];
-// size_t bloblen = ihx_blob(blob, sizeof(blob), "deadbeef");
-// assert(bloblen == 4);
-
 #if defined(__cplusplus)
 }
 #endif

@@ -14,14 +14,31 @@ typedef struct {
     uint8_t data[255];
 } CHUNK;
 
-static unsigned sum8(unsigned word)
+static int char2hex(int ch)
 {
-    return (word >> 8) + word;
+    if (ch < '0')
+        return -1;
+    if (ch <= '9')
+        return ch - '0';
+    if (ch < 'A')
+        return -1;
+    if (ch <= 'F')
+        return ch - 'A' + 10;
+    if (ch < 'a')
+        return -1;
+    if (ch <= 'f')
+        return ch - 'a' + 10;
+    return -1;
 }
 
 static unsigned make16(unsigned high, unsigned low)
 {
     return (high << 8) + low;
+}
+
+static unsigned sum8(unsigned word)
+{
+    return (word >> 8) + word;
 }
 
 // parse one record
@@ -53,7 +70,16 @@ static int parse_record(CHUNK* pc, const char* line)
 
     // convert line to byte array
     uint8_t blob[MAX_BYTES];
-    size_t bloblen = ihx_blob(blob, MAX_BYTES, &line[1]);
+    size_t bloblen = 0;
+    for (size_t i = 1; bloblen < MAX_BYTES; i += 2) {
+        int high = char2hex(line[i]);
+        if (high < 0)
+            break;
+        int low = char2hex(line[i + 1]);
+        if (low < 0)
+            break;
+        blob[bloblen++] = (high << 4) | low;
+    }
     if (bloblen != (length - 1) / 2)
         return -1;
 
@@ -88,7 +114,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
     *sz = *base = *entry = 0;
 
     bool found_eof = false;
-    for (unsigned lineno = 1; !found_eof; ++lineno) {
+    do {
         char line[MAX_LINE + 3];    // CR+LF+NUL
         if (fgets(line, sizeof(line), f) == NULL)
             break;
@@ -145,7 +171,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
             return -1;
         break;
         }
-    }
+    } while (!found_eof);
 
     if (start < end) {
         // rebase image
@@ -239,38 +265,4 @@ void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned fil
 
     // EOF record
     fputs(":00000001FF\n", f);
-}
-
-// convert char to hex number
-static int char2hex(int ch)
-{
-    if (ch < '0')
-        return -1;
-    if (ch <= '9')
-        return ch - '0';
-    if (ch < 'A')
-        return -1;
-    if (ch <= 'F')
-        return ch - 'A' + 10;
-    if (ch < 'a')
-        return -1;
-    if (ch <= 'f')
-        return ch - 'a' + 10;
-    return -1;
-}
-
-// convert hex string to byte array
-// return number of bytes converted
-size_t ihx_blob(uint8_t* blob, size_t sz, const char* str)
-{
-    for (size_t i = 0, j = 0; i < sz; ++i, j += 2) {
-        int high = char2hex(str[j]);
-        if (high < 0)
-            return i;
-        int low = char2hex(str[j + 1]);
-        if (low < 0)
-            return i;
-        blob[i] = (high << 4) | low;
-    }
-    return sz;
 }

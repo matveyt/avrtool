@@ -11,9 +11,19 @@
 #include "ihx.h"
 #include "isp.h"
 #include "ucomm.h"
-#include "ya_getopt.h"
 
-const char* z_progname = "avrtool";
+struct isp_device {
+    uint32_t sig;       // Signature bytes
+    bool cmdV;          // STK_UNIVERSAL supported
+    size_t fsz, psz;    // Flash Size and Page Size
+};
+
+static bool at89s(uint32_t sig);
+static size_t atmel_flashsize(uint32_t sig);
+static size_t atmel_pagesize(uint32_t sig, size_t fsz);
+static void isp_0(int ch, intptr_t fd);
+static uint8_t isp_v(int b1, int b2, int b3, int b4, intptr_t fd);
+static uint32_t isp_guess(struct isp_device* d, intptr_t fd);
 
 // user options
 static struct {
@@ -30,8 +40,8 @@ static struct {
 /*noreturn*/
 static void usage(int status)
 {
-    if (status != EXIT_SUCCESS)
-        fprintf(stderr, "Try '%s --help' for more information.\n", z_progname);
+    if (status != 0)
+        fprintf(stderr, "Try '%s --help' for more information.\n", z_getprogname());
     else
         printf(
 "Usage: %s [OPTION]... [FILE]\n"
@@ -50,38 +60,40 @@ static void usage(int status)
 "    --efuse=XX     Set extended fuse\n"
 "    --lock=XX      Set lock byte\n"
 "-h, --help         Show this message and exit\n",
-        z_progname);
+        z_getprogname());
     exit(status);
 }
 
 static void parse_args(int argc, char* argv[])
 {
-    static struct option lopts[] = {
-        { "port", required_argument, NULL, 'p' },
-        { "baud", required_argument, NULL, 'b' },
-        { "erase", no_argument, NULL, 'x' },
-        { "noerase", no_argument, NULL, 'X' },
-        { "base", required_argument, NULL, 'a' },
-        { "size", required_argument, NULL, 'z' },
-        { "read", no_argument, NULL, 'r' },
-        { "noreset", no_argument, NULL, 'n' },
-        { "lfuse", required_argument, NULL, 0 },
-        { "hfuse", required_argument, NULL, 1 },
-        { "efuse", required_argument, NULL, 2 },
-        { "lock", required_argument, NULL, 3 },
-        { "help", no_argument, NULL, 'h' },
+    z_setprogname(argv[0]);
+
+    static struct z_option lopts[] = {
+        { "port", z_required_argument, NULL, 'p' },
+        { "baud", z_required_argument, NULL, 'b' },
+        { "erase", z_no_argument, NULL, 'x' },
+        { "noerase", z_no_argument, NULL, 'X' },
+        { "base", z_required_argument, NULL, 'a' },
+        { "size", z_required_argument, NULL, 'z' },
+        { "read", z_no_argument, NULL, 'r' },
+        { "noreset", z_no_argument, NULL, 'n' },
+        { "lfuse", z_required_argument, NULL, 0 },
+        { "hfuse", z_required_argument, NULL, 1 },
+        { "efuse", z_required_argument, NULL, 2 },
+        { "lock", z_required_argument, NULL, 3 },
+        { "help", z_no_argument, NULL, 'h' },
         {0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "p:b:xXa:z:rnh", lopts, NULL)) != -1) {
+    while ((c = z_getopt_long(argc, argv, "p:b:xXa:z:rnh", lopts, NULL)) != -1) {
         switch (c) {
         case 'p':
             free(opt.port);
-            opt.port = z_strdup(optarg);
+            opt.port = z_strdup(z_optarg);
         break;
         case 'b':
-            opt.baud = strtoul(optarg, NULL, 10);
+            opt.baud = strtoul(z_optarg, NULL, 10);
         break;
         case 'x':
             ++opt.erase;
@@ -90,10 +102,10 @@ static void parse_args(int argc, char* argv[])
             --opt.erase;
         break;
         case 'a':
-            opt.base = strtoul(optarg, NULL, 16);
+            opt.base = strtoul(z_optarg, NULL, 16);
         break;
         case 'z':
-            opt.size = strtoul(optarg, NULL, 0);
+            opt.size = strtoul(z_optarg, NULL, 0);
         break;
         case 'r':
             opt.read = true;
@@ -108,7 +120,7 @@ static void parse_args(int argc, char* argv[])
         case 2:
         case 3:
             opt.fuse_mask |= 1 << c;
-            opt.fuse[c] = strtoul(optarg, NULL, 16);
+            opt.fuse[c] = strtoul(z_optarg, NULL, 16);
         break;
         case 'h':
             usage(EXIT_SUCCESS);
@@ -119,96 +131,8 @@ static void parse_args(int argc, char* argv[])
         }
     }
 
-    if (optind == argc - 1)
-        opt.file = z_strdup(argv[optind]);
-}
-
-// test if AT89S or AVR chip
-static bool at89s(uint32_t sig)
-{
-    return (sig & 0xf000) == 0x5000 || (sig & 0xf000) == 0x7000;
-}
-
-// Atmel Signature => Flash Size
-static size_t atmel_flashsize(uint32_t sig)
-{
-    unsigned nib2 = (sig >> 8) & 0xf;
-    return at89s(sig) ? (nib2 << 12) : (1024U << nib2);
-}
-
-// Atmel Flash Size => Page Size
-static size_t atmel_pagesize(uint32_t sig, size_t fsz)
-{
-    if ((sig & 0xf000) == 0x5000)
-        return 256;
-    if ((sig & 0xf000) == 0x7000)
-        return 64;
-    if (fsz <= 2048)
-        return 32;
-    if (fsz <= 8192)
-        return 64;
-    if (fsz <= 32768)
-        return 128;
-    return 256;
-}
-
-// AVRISP: simple command
-static void isp_0(int ch, intptr_t fd)
-{
-    int resp = isp_command(ch, fd);
-    if (resp != STK_OK)
-        z_error(EXIT_FAILURE, -1, "For '%c' got response %d", ch, resp);
-}
-
-// AVRISP: universal command
-static uint8_t isp_v(int b1, int b2, int b3, int b4, intptr_t fd)
-{
-    uint8_t b_out;
-    int resp = isp_universal(b1, b2, b3, b4, &b_out, fd);
-    if (resp != STK_OK)
-        z_error(EXIT_FAILURE, -1, "For 'V 0x%x 0x%x 0x%x 0x%x' got response %d",
-            b1, b2, b3, b4, resp);
-    return b_out;
-}
-
-// AVRISP: guess device parameters
-struct isp_device {
-    uint32_t sig;       // Signature bytes
-    bool cmdV;          // STK_UNIVERSAL supported
-    size_t fsz, psz;    // Flash Size and Page Size
-};
-static uint32_t isp_guess(struct isp_device* d, intptr_t fd)
-{
-    d->sig = 0;
-    isp_set_device(0x86, 32768, 128, fd);       // fake ATmega328P
-
-    isp_0('P', fd);
-    if (isp_read_sign(&d->sig, fd) == STK_OK) {
-        // AVR chip found
-        d->cmdV = (isp_v(0x30, 0, 0, 0, fd) == 0x1e);
-    } else {
-        // test for AT89S
-        isp_0('Q', fd);
-        isp_set_device(0xe1, 8192, 256, fd);    // fake AT89S52
-        isp_0('P', fd);
-        d->cmdV = (isp_v(0x28, 0, 0, 0, fd) == 0x1e);
-        if (d->cmdV) {
-            // read signature for AT89S directly
-            // (e.g., "Arduino as ISP" can do STK_READ_SIGN for AVR only)
-            uint8_t sig1 = isp_v(0x28, 1, 0, 0, fd);
-            uint8_t sig2 = isp_v(0x28, 2, 0, 0, fd);
-            d->sig = (0x1e << 16) | (sig1 << 8) | sig2;
-        }
-    }
-
-    // don't leave from bootloader's progmode (or it'd go reboot)
-    if (opt.noreset)
-        isp_0('Q', fd);
-    if ((d->sig >> 16) != 0x1e)
-        return 0;
-    d->fsz = atmel_flashsize(d->sig);
-    d->psz = atmel_pagesize(d->sig, d->fsz);
-    return d->sig;
+    if (z_optind == argc - 1)
+        opt.file = z_strdup(argv[z_optind]);
 }
 
 int main(int argc, char* argv[])
@@ -222,7 +146,7 @@ int main(int argc, char* argv[])
     if (isp < 0) {
         if (opt.port != NULL)
             z_error(EXIT_FAILURE, errno, "ucomm_open(\"%s\")", opt.port);
-        z_error(0, -1, "missing port name");
+        z_warnx(1, "missing port name");
         usage(EXIT_FAILURE);
     }
     free(opt.port);
@@ -371,4 +295,87 @@ int main(int argc, char* argv[])
     isp_0('Q', isp);
     ucomm_close(isp);
     exit(EXIT_SUCCESS);
+}
+
+// test if AT89S or AVR chip
+bool at89s(uint32_t sig)
+{
+    return (sig & 0xf000) == 0x5000 || (sig & 0xf000) == 0x7000;
+}
+
+// Atmel Signature => Flash Size
+size_t atmel_flashsize(uint32_t sig)
+{
+    unsigned nib2 = (sig >> 8) & 0xf;
+    return at89s(sig) ? (nib2 << 12) : (1024U << nib2);
+}
+
+// Atmel Flash Size => Page Size
+size_t atmel_pagesize(uint32_t sig, size_t fsz)
+{
+    if ((sig & 0xf000) == 0x5000)
+        return 256;
+    if ((sig & 0xf000) == 0x7000)
+        return 64;
+    if (fsz <= 2048)
+        return 32;
+    if (fsz <= 8192)
+        return 64;
+    if (fsz <= 32768)
+        return 128;
+    return 256;
+}
+
+// AVRISP: simple command
+void isp_0(int ch, intptr_t fd)
+{
+    int resp = isp_command(ch, fd);
+    if (resp != STK_OK)
+        z_error(EXIT_FAILURE, -1, "For '%c' got response %d", ch, resp);
+}
+
+// AVRISP: universal command
+uint8_t isp_v(int b1, int b2, int b3, int b4, intptr_t fd)
+{
+    uint8_t b_out;
+    int resp = isp_universal(b1, b2, b3, b4, &b_out, fd);
+    if (resp != STK_OK)
+        z_error(EXIT_FAILURE, -1, "For 'V 0x%x 0x%x 0x%x 0x%x' got response %d",
+            b1, b2, b3, b4, resp);
+    return b_out;
+}
+
+// AVRISP: guess device parameters
+uint32_t isp_guess(struct isp_device* d, intptr_t fd)
+{
+    d->sig = 0;
+    isp_set_device(0x86, 32768, 128, fd);       // fake ATmega328P
+
+    isp_0('P', fd);
+    if (isp_read_sign(&d->sig, fd) == STK_OK) {
+        // AVR chip found
+        d->cmdV = (isp_v(0x30, 0, 0, 0, fd) == 0x1e);
+    } else {
+        // test for AT89S
+        isp_0('Q', fd);
+        isp_set_device(0xe1, 8192, 256, fd);    // fake AT89S52
+        isp_0('P', fd);
+        d->cmdV = (isp_v(0x28, 0, 0, 0, fd) == 0x1e);
+        if (d->cmdV) {
+            // read signature for AT89S directly
+            // (e.g., "Arduino as ISP" can do STK_READ_SIGN for AVR only)
+            uint8_t sig1 = isp_v(0x28, 1, 0, 0, fd);
+            uint8_t sig2 = isp_v(0x28, 2, 0, 0, fd);
+            d->sig = (0x1e << 16) | (sig1 << 8) | sig2;
+        }
+    }
+
+    // don't leave from bootloader's progmode (or it'd go reboot)
+    if (opt.noreset)
+        isp_0('Q', fd);
+    if ((d->sig >> 16) != 0x1e)
+        return 0;
+    d->fsz = atmel_flashsize(d->sig);
+    d->psz = atmel_pagesize(d->sig, d->fsz);
+    return d->sig;
 }
