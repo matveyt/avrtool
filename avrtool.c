@@ -24,6 +24,7 @@ static size_t atmel_pagesize(uint32_t sig, size_t fsz);
 static void isp_0(int ch, intptr_t fd);
 static uint8_t isp_v(int b1, int b2, int b3, int b4, intptr_t fd);
 static uint32_t isp_guess(struct isp_device* d, intptr_t fd);
+static void list_ports(void);
 
 // user options
 static struct {
@@ -59,6 +60,7 @@ static void usage(int status)
 "    --hfuse=XX     Set high fuse\n"
 "    --efuse=XX     Set extended fuse\n"
 "    --lock=XX      Set lock byte\n"
+"-l, --list-ports   List available ports only\n"
 "-h, --help         Show this message and exit\n",
         z_getprogname());
     exit(status);
@@ -81,12 +83,13 @@ static void parse_args(int argc, char* argv[])
         { "hfuse", z_required_argument, NULL, 1 },
         { "efuse", z_required_argument, NULL, 2 },
         { "lock", z_required_argument, NULL, 3 },
+        { "list-ports", z_no_argument, NULL, 'l' },
         { "help", z_no_argument, NULL, 'h' },
         {0}
     };
 
     int c;
-    while ((c = z_getopt_long(argc, argv, "p:b:xXa:z:rnh", lopts, NULL)) != -1) {
+    while ((c = z_getopt_long(argc, argv, "p:b:xXa:z:rnlh", lopts, NULL)) != -1) {
         switch (c) {
         case 'p':
             free(opt.port);
@@ -121,6 +124,10 @@ static void parse_args(int argc, char* argv[])
         case 3:
             opt.fuse_mask |= 1 << c;
             opt.fuse[c] = strtoul(z_optarg, NULL, 16);
+        break;
+        case 'l':
+            list_ports();
+            exit(EXIT_SUCCESS);
         break;
         case 'h':
             usage(EXIT_SUCCESS);
@@ -378,4 +385,14 @@ uint32_t isp_guess(struct isp_device* d, intptr_t fd)
     d->fsz = atmel_flashsize(d->sig);
     d->psz = atmel_pagesize(d->sig, d->fsz);
     return d->sig;
+}
+
+void list_ports(void)
+{
+    char** ports;
+    size_t n = ucomm_ports(&ports);
+    for (size_t i = 0; i < n; ++i)
+        puts(ports[i]);
+    printf("%zu ports found\n", n);
+    free(ports);
 }

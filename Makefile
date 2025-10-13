@@ -1,22 +1,21 @@
-PROG = avrtool
-OBJS = avrtool.o ihx.o isp.o stdz.o ucomm.o
-
-$(PROG) : $(OBJS)
-avrtool.o : ihx.h isp.h stdz.h ucomm.h getopt.h
-ihx.o : ihx.h stdz.h
-isp.o : isp.h ucomm.h
-stdz.o : stdz.h getopt.h getopt.c
-ucomm.o : ucomm.h
+TARGET = avrtool
+OBJECTS = avrtool.o stdz.o ihx.o isp.o ucomm.o ucomm_ports.o
 
 CFLAGS += -O2 -std=c99
 CFLAGS += -Wall -Wextra -Wpedantic -Werror
 LDFLAGS += -s
 MAKEFLAGS += -r
 
-$(PROG) :
-	$(CC) $(LDFLAGS) $(OBJS) $(LDLIBS) -o $@
+$(TARGET) : $(OBJECTS)
+	$(CC) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o $@
 %.o : %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 clean :
-	-rm -f $(PROG) *.o
+	-rm -f $(TARGET) $(OBJECTS)
 .PHONY : clean
+
+avrtool.o : stdz.h getopt.h ihx.h isp.h ucomm.h
+stdz.o : stdz.h getopt.h getopt.c
+ihx.o : stdz.h ihx.h
+isp.o : isp.h ucomm.h
+ucomm.o ucomm_ports.o : ucomm.h

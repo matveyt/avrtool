@@ -47,5 +47,6 @@ STK500v1 serial programmer. Write HEX/BIN file to AVR/Arduino.
     --hfuse=XX     Set high fuse
     --efuse=XX     Set extended fuse
     --lock=XX      Set lock byte
+-l, --list-ports   List available ports only
 -h, --help         Show this message and exit
 ```
