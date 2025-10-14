@@ -105,12 +105,13 @@ static int parse_record(CHUNK* pc, const char* line)
 }
 
 // convert Intel HEX to Binary image
-int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
+int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned filler,
+    FILE* f)
 {
     size_t segment = 0, blocksize = 0x10000;    // 64 KB
     size_t start = SIZE_MAX, end = 0, eip = 0;
 
-    *image = (uint8_t*)memset(z_malloc(blocksize), 0xff, blocksize);
+    *image = (uint8_t*)memset(z_malloc(blocksize), min(filler, 255), blocksize);
     *sz = *base = *entry = 0;
 
     bool found_eof = false;
@@ -141,7 +142,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f)
                 if (segment + 0x10000 > blocksize) {
                     size_t newsize = segment + 0x100000; // +1 MB
                     *image = (uint8_t*)z_realloc(*image, newsize);
-                    memset(*image + blocksize, 0xff, newsize - blocksize);
+                    memset(*image + blocksize, min(filler, 255), newsize - blocksize);
                     blocksize = newsize;
                 }
             }

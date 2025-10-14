@@ -56,10 +56,10 @@ static void usage(int status)
 "-z, --size=NUM     Flash memory maximum size\n"
 "-r, --read         Read memory to FILE\n"
 "-n, --noreset      Do not assert DTR or RTS\n"
-"    --lfuse=XX     Set low fuse\n"
-"    --hfuse=XX     Set high fuse\n"
-"    --efuse=XX     Set extended fuse\n"
-"    --lock=XX      Set lock byte\n"
+"    --lfuse=X      Set low fuse\n"
+"    --hfuse=X      Set high fuse\n"
+"    --efuse=X      Set extended fuse\n"
+"    --lock=X       Set lock byte\n"
 "-l, --list-ports   List available ports only\n"
 "-h, --help         Show this message and exit\n",
         z_getprogname());
@@ -169,7 +169,6 @@ int main(int argc, char* argv[])
     // Wait for connect
     puts("Wait for connection...");
     do {
-        (void)ucomm_getc(isp);  // delay
         // STK_GET_SYNC
     } while (isp_command('0', isp) != STK_OK);
     ucomm_purge(isp);
@@ -248,7 +247,7 @@ int main(int argc, char* argv[])
             ihx_dump(image, sz, base, base, 0xff, 0, f);
         } else {
             // Write Flash
-            if (ihx_load(&image, &sz, &base, &(size_t){0}, f) < 0)
+            if (ihx_load(&image, &sz, &base, &(size_t){0}, 0xff, f) < 0)
                 z_error(EXIT_FAILURE, errno, "ihx_load");
             // overwrite image base and size
             if (opt.base < d.fsz)

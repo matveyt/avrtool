@@ -43,10 +43,10 @@ STK500v1 serial programmer. Write HEX/BIN file to AVR/Arduino.
 -z, --size=NUM     Flash memory maximum size
 -r, --read         Read memory to FILE
 -n, --noreset      Do not assert DTR or RTS
-    --lfuse=XX     Set low fuse
-    --hfuse=XX     Set high fuse
-    --efuse=XX     Set extended fuse
-    --lock=XX      Set lock byte
+    --lfuse=X      Set low fuse
+    --hfuse=X      Set high fuse
+    --efuse=X      Set extended fuse
+    --lock=X       Set lock byte
 -l, --list-ports   List available ports only
 -h, --help         Show this message and exit
 ```

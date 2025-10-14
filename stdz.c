@@ -30,9 +30,19 @@ void z_setprogname(const char* progname)
 
 FILE* z_fopen(const char* fname, const char* mode)
 {
+    if (fname == NULL || (fname[0] == '-' && fname[1] == 0)) {
+        while (*mode == ' ')
+            ++mode;
+        if (*mode == 'r')
+            return stdin;
+        if (*mode == 'w' || *mode == 'a')
+            return stdout;
+        z_error(EXIT_FAILURE, EINVAL, "fopen(%s, %s)", "-", mode);
+    }
+
     FILE* f = fopen(fname, mode);
     if (f == NULL)
-        z_error(EXIT_FAILURE, errno, "fopen(\"%s\")", fname);
+        z_error(EXIT_FAILURE, errno, "fopen(%s, %s)", fname, mode);
     return f;
 }
 
@@ -75,7 +85,7 @@ void z_error(int status, int errnum, const char* fmt, ...)
     if (z_strerror_r(errnum, buf, sizeof(buf)) == 0)
         fprintf(stderr, ": %s", buf);
 
-    fputc('\n', stderr);
+    putc('\n', stderr);
 
     if (status != 0)
         exit(status);
@@ -106,7 +116,7 @@ void z_vwarnx(int nl, const char* fmt, va_list args)
     if (fmt != NULL)
         vfprintf(stderr, fmt, args);
     if (nl)
-        fputc('\n', stderr);
+        putc('\n', stderr);
 }
 
 // like warnx(3) but with 'nl'

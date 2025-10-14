@@ -11,10 +11,11 @@ extern "C" {
 
 // load Intel HEX or Binary file
 // note: may fseek(f), caller must free(image)
-int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, FILE* f);
+int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned filler,
+    FILE* f);
 // uint8_t* image;
 // size_t sz, base, entry;
-// int fmt = ihx_load(&image, &sz, &base, &entry, f);
+// int fmt = ihx_load(&image, &sz, &base, &entry, 0xff, f);
 // if (fmt < 0) {
 //     assert(fmt == -1);
 //     assert(image == NULL);
