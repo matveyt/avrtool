@@ -153,7 +153,7 @@ int main(int argc, char* argv[])
     if (isp < 0) {
         if (opt.port != NULL)
             z_error(EXIT_FAILURE, errno, "ucomm_open(\"%s\")", opt.port);
-        z_warnx(1, "missing port name");
+        z_warnx("missing port name");
         usage(EXIT_FAILURE);
     }
     free(opt.port);
@@ -206,8 +206,7 @@ int main(int argc, char* argv[])
             isp_v(0xac, 0x80, 0, 0, isp);
         else
             isp_0('R', isp);
-        (void)ucomm_getc(isp);  // delay >= 500 ms (AT89S)
-        (void)ucomm_getc(isp);
+        z_delay(500);       // delay >= 500 ms (AT89S)
     }
 
     // Read/Write

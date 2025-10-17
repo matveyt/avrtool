@@ -4,7 +4,7 @@
  * Aimed to be fully portable, complete, compatible (GNU/POSIX) and bug-free.
  * Written from scratch and released into the public domain.
  *
- * Last Change:  2025 Oct 13
+ * Last Change:  2025 Oct 15
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/getopt
  */
@@ -207,6 +207,7 @@ static int _getopt_internal(int argc, char* argv[], const char* optstring,
                     *longindex = match;
                 if (_getopt(optarg) != NULL && longopts[match].has_arg == 0) {
                     // error: extraneous long option argument
+                    _getopt(optarg) = NULL;
                     _getopt(optopt) = chopt;
                     if (_getopt(opterr) && !colon0)
                         _getopt_println("option '%s%s' doesn't allow an argument",
