@@ -4,7 +4,7 @@
  * Aimed to be fully portable, complete, compatible (GNU/POSIX) and bug-free.
  * Written from scratch and released into the public domain.
  *
- * Last Change:  2025 Oct 10
+ * Last Change:  2025 Oct 21
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/getopt
  */
@@ -46,7 +46,7 @@ int _getopt(getopt_long)(int argc, char* const argv[], const char* optstring,
     const struct _getopt(option)* longopts, int* longindex);
 int _getopt(getopt_long_only)(int argc, char* const argv[], const char* optstring,
     const struct _getopt(option)* longopts, int* longindex);
-int _getopt(getsubopt)(char** optionp, char* const* tokens, char** valuep);
+int _getopt(getsubopt)(char** optionp, const char* const* tokens, char** valuep);
 
 #undef _getopt
 #undef _getopt_concat

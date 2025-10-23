@@ -4,14 +4,13 @@
  * Aimed to be fully portable, complete, compatible (GNU/POSIX) and bug-free.
  * Written from scratch and released into the public domain.
  *
- * Last Change:  2025 Oct 15
+ * Last Change:  2025 Oct 21
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/getopt
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 // GETOPT_PREFIX for globals
 #if defined(GETOPT_PREFIX)
@@ -56,23 +55,41 @@ char* _getopt(optarg) = NULL;
 int _getopt(optind) = 1, _getopt(opterr) = 1, _getopt(optopt) = '?';
 int _getopt(optreset) = 0;
 
+// strchrnul(3) impl.
+static char* _getopt_strchrnul(const char* str, int c)
+{
+    for (; *str != 0 && *(unsigned char*)str != c; ++str) ;
+    return (char*)str;
+}
+
+// find length of prefix pre[n] in str
+// return (n + 1) if str is exactly null-terminated pre[n]
+static size_t _getopt_prefix(const char* str, const char* pre, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        if (str[i] != pre[i])
+            return i;
+    return str[n] ? n : n + 1;
+}
+
 // return matched index in longopts[] or
 // -1 no match
 // -2 ambiguous match
 static int _getopt_longmatch(char* optname, const struct _getopt_option* longopts,
     int longonly, char** valuep)
 {
-    char* value = strchr(optname, '=');
-    size_t len = (value != NULL) ? (size_t)(value++ - optname) : strlen(optname);
+    char* value = _getopt_strchrnul(optname, '=');
+    size_t len = value - optname;
+    int match = -1;
 
-    int match = -1;         // no match yet
     for (int i = 0; longopts[i].name != NULL; ++i) {
-        if (strncmp(optname, longopts[i].name, len) == 0) {
-            if (longopts[i].name[len] == 0) {
-                match = i;  // prefer exact match
-                break;
-            } else if (match < 0) {
-                match = i;  // found partial match
+        size_t plen = _getopt_prefix(longopts[i].name, optname, len);
+        if (plen > len) {
+            match = i;      // prefer exact match
+            break;
+        } else if (plen == len) {
+            if (match < 0) {
+                match = i;  // partial match
             } else if (longonly
                 || longopts[i].has_arg != longopts[match].has_arg
                 || longopts[i].flag != longopts[match].flag
@@ -83,7 +100,7 @@ static int _getopt_longmatch(char* optname, const struct _getopt_option* longopt
         }
     }
 
-    *valuep = (match >= 0) ? value : NULL;
+    *valuep = (match >= 0 && *value) ? value + 1 : NULL;
     return match;
 }
 
@@ -250,13 +267,11 @@ static int _getopt_internal(int argc, char* argv[], const char* optstring,
                         _getopt_println("unrecognized option '%s%s'",
                             dashdash ? "--" : "-", optname);
                     } else {
-                        char* value = strchr(optname, '=');
-                        size_t len = (value != NULL) ? (size_t)(value - optname)
-                            : strlen(optname);
+                        size_t len = _getopt_strchrnul(optname, '=') - optname;
                         _getopt_printn("option '%s%s' is ambiguous; possibilites:",
                             dashdash ? "--" : "-", optname);
                         for (int i = 0; longopts[i].name != NULL; ++i)
-                            if (strncmp(optname, longopts[i].name, len) == 0)
+                            if (_getopt_prefix(longopts[i].name, optname, len) == len)
                                 _getopt_print(" '%s%s'", dashdash ? "--" : "-",
                                     longopts[i].name);
                         _getopt_print("\n");
@@ -270,7 +285,7 @@ static int _getopt_internal(int argc, char* argv[], const char* optstring,
         // short option?
         const char* optionp;
         if (chopt == '-' || chopt == ':' || chopt == ';' || optstring == NULL
-            || (optionp = strchr(optstring, chopt)) == NULL) {
+            || (optionp = _getopt_strchrnul(optstring, chopt))[0] == 0) {
             // error: illegal short option
             _getopt(optopt) = chopt;
             if (_getopt(opterr) && !colon0)
@@ -328,31 +343,25 @@ int _getopt(getopt_long_only)(int argc, char* const argv[], const char* optstrin
 }
 
 // getsubopt(3) impl.
-int _getopt(getsubopt)(char** optionp, char* const* tokens, char** valuep)
+int _getopt(getsubopt)(char** optionp, const char* const* tokens, char** valuep)
 {
     char* optname = *optionp;
-    char* value = strchr(optname, ',');
-    size_t len;
+    char* value = _getopt_strchrnul(optname, ',');
 
-    if (value != NULL) {
-        // isolate suboption
-        *value = 0;
-        len = value++ - optname;
-        *optionp = value;
-    } else {
-        // last suboption
-        len = strlen(optname);
-        *optionp += len;
-    }
+    // isolate suboption
+    if (*value)
+        *value++ = 0;
+    *optionp = value;
 
     // name or name=length?
-    value = strchr(optname, '=');
-    if (value != NULL)
-        len = value++ - optname;
+    value = _getopt_strchrnul(optname, '=');
+    size_t len = value - optname;
+    if (*value)
+        value++;
 
     for (int i = 0; tokens[i] != NULL; ++i) {
-        if (strncmp(optname, tokens[i], len) == 0 && tokens[i][len] == 0) {
-            // match suboption
+        // exact match only
+        if (_getopt_prefix(tokens[i], optname, len) > len) {
             *valuep = value;
             return i;
         }

@@ -27,7 +27,7 @@ Notes:
 ### Build
 
 If using GCC then simply run `make`. Otherwise, you may need to setup different compile
-flags. The source code itself is thought to be C99 portable.
+flags. The source code is believed to be C99 compliant.
 
 ### Use
 

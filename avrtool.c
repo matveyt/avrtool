@@ -152,7 +152,7 @@ int main(int argc, char* argv[])
     intptr_t isp = ucomm_open(opt.port, opt.baud, 0x801/*8-N-1*/);
     if (isp < 0) {
         if (opt.port != NULL)
-            z_error(EXIT_FAILURE, errno, "ucomm_open(\"%s\")", opt.port);
+            z_error(EXIT_FAILURE, errno, "ucomm_open(%s)", opt.port);
         z_warnx("missing port name");
         usage(EXIT_FAILURE);
     }
@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
     isp_set_device(at89s(d.sig) ? 0xe1 : 0x86, d.fsz, d.psz, isp);
     isp_0('P', isp);
 
-    printf("Device ID: 0x%x\n", d.sig);
+    printf("Device ID: %#x\n", d.sig);
     printf("Flash Memory: %zuKB,%zup,x%zu\n", d.fsz / 1024, d.fsz / d.psz, d.psz);
     printf("STK_UNIVERSAL: %s\n", d.cmdV ? "yes" : "no");
 
@@ -220,61 +220,60 @@ int main(int argc, char* argv[])
         }
 
         FILE* f = z_fopen(opt.file, opt.read ? "w" : "rb");
-        uint8_t* image;
-        size_t sz, base;
+        IHX ihx;
         if (opt.read) {
             // Read Flash
-            base = (opt.base < d.fsz) ? opt.base : 0;
-            sz = min(opt.size, d.fsz - base);
-            image = z_malloc(sz);
-            printf("Read Flash[%zu] ", sz);
-            for (size_t cnt = 0; cnt < sz; cnt += d.psz) {
+            ihx.base = ihx.entry = (opt.base < d.fsz) ? opt.base : 0;
+            ihx.sz = min(opt.size, d.fsz - ihx.base);
+            ihx.image = (uint8_t*)z_malloc(ihx.sz);
+            printf("Read Flash[%zu] ", ihx.sz);
+            for (size_t cnt = 0; cnt < ihx.sz; cnt += d.psz) {
                 if (at89s(d.sig)) {
                     // reading AT89S in slow byte mode
                     for (size_t i = 0; i < d.psz; ++i) {
-                        uint16_t addr = base + cnt + i;
-                        image[cnt + i] = isp_v(0x20, addr >> 8, addr, 0, isp);
+                        uint16_t addr = ihx.base + cnt + i;
+                        ihx.image[cnt + i] = isp_v(0x20, addr >> 8, addr, 0, isp);
                     }
                 } else {
                     // invoke STK_READ_PAGE
-                    isp_load_address(base + cnt, isp);
-                    if (isp_read_page(&image[cnt], d.psz, isp) != STK_OK)
-                        z_error(EXIT_FAILURE, -1, "READ_PAGE 0x%zx", base + cnt);
+                    isp_load_address(ihx.base + cnt, isp);
+                    if (isp_read_page(&ihx.image[cnt], d.psz, isp) != STK_OK)
+                        z_error(EXIT_FAILURE, -1, "READ_PAGE %#zx", ihx.base + cnt);
                 }
-                putchar('#');
+                fputc('#', stdout);
             }
-            ihx_dump(image, sz, base, base, 0xff, 0, f);
+            ihx_dump(&ihx, 0xff, 0, f);
         } else {
             // Write Flash
-            if (ihx_load(&image, &sz, &base, &(size_t){0}, 0xff, f) < 0)
+            if (ihx_load(&ihx, 0xff, f) < 0)
                 z_error(EXIT_FAILURE, errno, "ihx_load");
             // overwrite image base and size
             if (opt.base < d.fsz)
-                base = opt.base;
-            sz = min(sz, opt.size);
-            if (base + sz > d.fsz)
+                ihx.base = opt.base;
+            ihx.sz = min(ihx.sz, opt.size);
+            if (ihx.base + ihx.sz > d.fsz)
                 z_error(EXIT_FAILURE, EFBIG, "ihx_load");
 
-            printf("Write Flash[%zu] ", sz);
-            for (size_t cnt = 0; cnt < sz; cnt += d.psz) {
-                size_t rest = min(d.psz, sz - cnt);
+            printf("Write Flash[%zu] ", ihx.sz);
+            for (size_t cnt = 0; cnt < ihx.sz; cnt += d.psz) {
+                size_t rest = min(d.psz, ihx.sz - cnt);
                 if (at89s(d.sig)) {
                     // writing AT89S in slow byte mode
                     for (size_t i = 0; i < rest; ++i) {
-                        uint16_t addr = base + cnt + i;
-                        isp_v(0x40, addr >> 8, addr, image[cnt + i], isp);
+                        uint16_t addr = ihx.base + cnt + i;
+                        isp_v(0x40, addr >> 8, addr, ihx.image[cnt + i], isp);
                     }
                 } else {
                     // invoke STK_PROG_PAGE
-                    isp_load_address(base + cnt, isp);
-                    if (isp_prog_page(&image[cnt], rest, isp) != STK_OK)
-                        z_error(EXIT_FAILURE, -1, "PROG_PAGE 0x%zx", base + cnt);
+                    isp_load_address(ihx.base + cnt, isp);
+                    if (isp_prog_page(&ihx.image[cnt], rest, isp) != STK_OK)
+                        z_error(EXIT_FAILURE, -1, "PROG_PAGE %#zx", ihx.base + cnt);
                 }
-                putchar('#');
+                fputc('#', stdout);
             }
         }
-        putchar('\n');
-        free(image);
+        fputc('\n', stdout);
+        free(ihx.image);
         fclose(f);
     }
 
@@ -345,7 +344,7 @@ uint8_t isp_v(int b1, int b2, int b3, int b4, intptr_t fd)
     uint8_t b_out;
     int resp = isp_universal(b1, b2, b3, b4, &b_out, fd);
     if (resp != STK_OK)
-        z_error(EXIT_FAILURE, -1, "For 'V 0x%x 0x%x 0x%x 0x%x' got response %d",
+        z_error(EXIT_FAILURE, -1, "For 'V %#x %#x %#x %#x' got response %d",
             b1, b2, b3, b4, resp);
     return b_out;
 }

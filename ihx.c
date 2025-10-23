@@ -14,20 +14,20 @@ typedef struct {
     uint8_t data[255];
 } CHUNK;
 
-static int char2hex(int ch)
+static int char2hex(int c)
 {
-    if (ch < '0')
+    if (c < '0')
         return -1;
-    if (ch <= '9')
-        return ch - '0';
-    if (ch < 'A')
+    if (c <= '9')
+        return c - '0';
+    if (c < 'A')
         return -1;
-    if (ch <= 'F')
-        return ch - 'A' + 10;
-    if (ch < 'a')
+    if (c <= 'F')
+        return c - 'A' + 10;
+    if (c < 'a')
         return -1;
-    if (ch <= 'f')
-        return ch - 'a' + 10;
+    if (c <= 'f')
+        return c - 'a' + 10;
     return -1;
 }
 
@@ -105,14 +105,13 @@ static int parse_record(CHUNK* pc, const char* line)
 }
 
 // convert Intel HEX to Binary image
-int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned filler,
-    FILE* f)
+int ihx_load(IHX* ihx, unsigned filler, FILE* f)
 {
     size_t segment = 0, blocksize = 0x10000;    // 64 KB
     size_t start = SIZE_MAX, end = 0, eip = 0;
 
-    *image = (uint8_t*)memset(z_malloc(blocksize), min(filler, 255), blocksize);
-    *sz = *base = *entry = 0;
+    ihx->image = (uint8_t*)memset(z_malloc(blocksize), min(filler, 255), blocksize);
+    ihx->sz = ihx->base = ihx->entry = 0;
 
     bool found_eof = false;
     do {
@@ -125,7 +124,7 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned 
         case 0: /* DATA */
             if (chunk.count > 0) {
                 // parse_record() guarantees never getting past 64 KB
-                memcpy(*image + segment + chunk.address, chunk.data, chunk.count);
+                memcpy(ihx->image + segment + chunk.address, chunk.data, chunk.count);
                 start = min(start, segment + chunk.address);
                 end = max(end, segment + chunk.address + chunk.count);
             }
@@ -141,8 +140,9 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned 
                 // grow image if less than 64 KB remaining
                 if (segment + 0x10000 > blocksize) {
                     size_t newsize = segment + 0x100000; // +1 MB
-                    *image = (uint8_t*)z_realloc(*image, newsize);
-                    memset(*image + blocksize, min(filler, 255), newsize - blocksize);
+                    ihx->image = (uint8_t*)z_realloc(ihx->image, newsize);
+                    memset(ihx->image + blocksize, min(filler, 255),
+                        newsize - blocksize);
                     blocksize = newsize;
                 }
             }
@@ -162,13 +162,13 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned 
                 long t = ftell(f);
                 if (t > 0) {
                     fseek(f, 0, SEEK_SET);
-                    *image = (uint8_t*)z_realloc(*image, t);
-                    *sz = fread(*image, 1, t, f);
+                    ihx->image = (uint8_t*)z_realloc(ihx->image, t);
+                    ihx->sz = fread(ihx->image, 1, t, f);
                     return 'b';
                 }
             }
-            free(*image);
-            *image = NULL;
+            free(ihx->image);
+            ihx->image = NULL;
             return -1;
         break;
         }
@@ -177,33 +177,29 @@ int ihx_load(uint8_t** image, size_t* sz, size_t* base, size_t* entry, unsigned 
     if (start < end) {
         // rebase image
         if (start > 0)
-            memmove(*image, *image + start, end - start);
-        *sz = end - start;
-        *base = start;
-        if (start <= eip && eip < end)
-            *entry = eip;
-        else
-            *entry = start;
+            memmove(ihx->image, ihx->image + start, end - start);
+        ihx->sz = end - start;
+        ihx->base = start;
+        ihx->entry = (start <= eip && eip < end) ? eip : start;
     }
 
     // shrink memory block
-    *image = (uint8_t*)z_realloc(*image, *sz);
+    ihx->image = (uint8_t*)z_realloc(ihx->image, ihx->sz);
     return 'x';
 }
 
 // format output as Intel HEX file
-void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned filler,
-    unsigned wrap, FILE* f)
+void ihx_dump(IHX* ihx, unsigned filler, unsigned wrap, FILE* f)
 {
-    size_t segment = base & 0xffff0000; // over 64 KB
-    bool use32 = (sz > 0x100000);       // size > 1 MB
+    size_t segment = ihx->base & 0xffff0000;    // over 64 KB
+    bool use32 = (ihx->sz > 0x100000);          // size > 1 MB
 
     if (wrap == 0)
         wrap = 16;
 
-    for (size_t i = 0; i < sz; ) {
+    for (size_t i = 0; i < ihx->sz; ) {
         // segment overrun
-        if (segment <= base + i) {
+        if (segment <= ihx->base + i) {
             // address output
             if (segment > 0) {
                 unsigned type, high;
@@ -221,25 +217,25 @@ void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned fil
         }
 
         // max number of bytes on line
-        unsigned cb_max = segment - base - i;
-        cb_max = min(cb_max, sz - i);
+        unsigned cb_max = segment - ihx->base - i;
+        cb_max = min(cb_max, ihx->sz - i);
         cb_max = min(cb_max, wrap);
 
         // skip trailing bytes
         unsigned cb_line = cb_max;
         if (filler <= 255)
             for (; cb_line > 0; --cb_line)
-                if (image[i + cb_line - 1] != filler)
+                if (ihx->image[i + cb_line - 1] != filler)
                     break;
 
         if (cb_line > 0) {
             // : count address type(00)
-            fprintf(f, ":%02X%04X00", cb_line, (uint16_t)(base + i));
-            int sum = cb_line + sum8(base + i);
+            fprintf(f, ":%02X%04X00", cb_line, (uint16_t)(ihx->base + i));
+            int sum = cb_line + sum8(ihx->base + i);
             // data
             for (unsigned j = 0; j < cb_line; ++j) {
-                fprintf(f, "%02X", image[i + j]);
-                sum += image[i + j];
+                fprintf(f, "%02X", ihx->image[i + j]);
+                sum += ihx->image[i + j];
             }
             // checksum
             fprintf(f, "%02X\n", (uint8_t)(-sum));
@@ -250,17 +246,17 @@ void ihx_dump(uint8_t* image, size_t sz, size_t base, size_t entry, unsigned fil
     }
 
     // start address
-    if (entry > 0) {
+    if (ihx->entry > 0) {
         unsigned type, high;
         if (use32) {
             type = 5;
-            high = entry >> 16;
+            high = ihx->entry >> 16;
         } else {
             type = 3;
-            high = (entry & 0xf0000) >> 4;
+            high = (ihx->entry & 0xf0000) >> 4;
         }
-        int sum = 4 + type + sum8(high + entry);
-        fprintf(f, ":040000%02X%04X%04X%02X\n", type, high, (uint16_t)entry,
+        int sum = 4 + type + sum8(high + ihx->entry);
+        fprintf(f, ":040000%02X%04X%04X%02X\n", type, high, (uint16_t)ihx->entry,
             (uint8_t)(-sum));
     }
 
