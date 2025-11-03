@@ -4,7 +4,7 @@
  * Aimed to be fully portable, complete, compatible (GNU/POSIX) and bug-free.
  * Written from scratch and released into the public domain.
  *
- * Last Change:  2025 Oct 21
+ * Last Change:  2025 Oct 24
  * License:      https://unlicense.org
  * URL:          https://github.com/matveyt/getopt
  */
@@ -343,7 +343,7 @@ int _getopt(getopt_long_only)(int argc, char* const argv[], const char* optstrin
 }
 
 // getsubopt(3) impl.
-int _getopt(getsubopt)(char** optionp, const char* const* tokens, char** valuep)
+int _getopt(getsubopt)(char** optionp, char* const* tokens, char** valuep)
 {
     char* optname = *optionp;
     char* value = _getopt_strchrnul(optname, ',');

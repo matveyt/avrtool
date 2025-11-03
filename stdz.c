@@ -113,7 +113,7 @@ ssize_t z_getdelim(char** linep, size_t* n, int delimiter, FILE* stream)
             break;
         if (offset + 1 >= sz) {
             if (sz >= INT_MAX)
-                z_error(EXIT_FAILURE, EOVERFLOW, "getdelim(%zu)", sz);
+                z_error(EXIT_FAILURE, ENOMEM, "getdelim(%zu)", sz);
             *linep = (char*)z_realloc(*linep, sz += sz/2 + 16);
         }
         (*linep)[offset++] = (char)c;
@@ -244,7 +244,7 @@ ssize_t z_strscpy(char* dst, const char* src, size_t n)
 // stpecpy(7) impl.
 char* z_stpecpy(char* dst, char* end, const char* src)
 {
-    if (dst == NULL)
+    if (dst == NULL || dst >= end)
         return NULL;
 
     char* ptr = (char*)z_memccpy(dst, src, 0, end - dst);
